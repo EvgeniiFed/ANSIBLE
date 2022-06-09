@@ -1,0 +1,61 @@
+---
+
+- name: PostgreSQL update
+  hosts: all
+  become: yes
+  become_user: root
+  become_method: sudo
+
+  tasks:
+
+    - name: Create the file repository configuration
+      shell: sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+
+    - name: Import the repository signing key
+      shell: wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+
+    - name: Install postgresql package
+      apt:
+        update_cache: yes
+        pkg: postgresql-12
+
+    - name: Check postgresql version
+      shell: locate bin/psql | grep postgresql | awk '{split($0,a,"/"); print a[5]}'
+      register: pg_version
+
+    - name: Stop PostgreSQL
+      shell: service postgresql stop
+
+    - name: Drop the new updated version cluster
+      shell: pg_dropcluster --stop 12 main
+
+    - name: "Data migration {{ pg_version.stdout }}"
+      shell: "pg_upgradecluster -m upgrade {{ pg_version.stdout }} main"
+      ignore_errors: yes
+
+    - name: Start PostgreSQL
+      shell: service postgresql start
+
+    - name: Check postgresql clusters
+      shell: pg_lsclusters
+      register: result
+    - name: Showing report postgresql clusters
+      debug:
+        var: result.stdout_lines
+
+    - name: "Stop the {{ pg_version.stdout }} cluster"
+      shell: "pg_dropcluster {{ pg_version.stdout }} main --stop"
+
+    - name: Check postgresql clusters
+      shell: pg_lsclusters
+      register: result
+    - name: Showing report postgresql clusters
+      debug:
+        var: result.stdout_lines
+
+    - name: PostgreSQL service facts
+      command: service postgresql status
+      register: result
+    - name: showing report service facts
+      debug:
+        var: result.stdout_lines[:3]
